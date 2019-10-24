@@ -5,119 +5,141 @@ const io = require("@actions/io")
 const tc = require("@actions/tool-cache")
 
 const path = require("path")
+const md5File = require('md5-file')
 
-const INSTALL_PREFIX = ".install"
-const LUA_PREFIX = ".lua"
+const SOURCE_DIRECTORY = path.join(process.cwd(), ".source")
+const INSTALL_PREFIX = path.join(process.cwd(), ".lua")
 
 const VERSION_ALIASES = {
   "5.1": "5.1.5",
   "5.2": "5.2.4",
   "5.3": "5.3.5",
-  "luajit": "luajit-2.1.0-beta3",
+  "5.4": "5.3.5",
+  "luajit": "luajit-2.0.5",
+  "luajit-2.0": "luajit-2.0.5",
+  "luajit-2.1": "luajit-2.1.0-beta3",
 }
 
-async function install_luajit_openresty() {
-  const luaInstallPath = path.join(process.cwd(), LUA_PREFIX)
-  const installPath = path.join(process.cwd(), INSTALL_PREFIX)
+const TARBALLS = {
+  "5.4.0-beta1":        ["961e2692a10a4a3c6fe80086e4cbefd5", "https://www.lua.org/work/lua-5.4.0-beta.tar.gz"],
+  "5.3.5":              ["4f4b4f323fd3514a68e0ab3da8ce3455", "https://www.lua.org/ftp/lua-5.3.5.tar.gz"],
+  "5.3.4":              ["53a9c68bcc0eda58bdc2095ad5cdfc63", "https://www.lua.org/ftp/lua-5.3.4.tar.gz"],
+  "5.3.3":              ["703f75caa4fdf4a911c1a72e67a27498", "https://www.lua.org/ftp/lua-5.3.3.tar.gz"],
+  "5.3.2":              ["33278c2ab5ee3c1a875be8d55c1ca2a1", "https://www.lua.org/ftp/lua-5.3.2.tar.gz"],
+  "5.3.1":              ["797adacada8d85761c079390ff1d9961", "https://www.lua.org/ftp/lua-5.3.1.tar.gz"],
+  "5.3.0":              ["a1b0a7e92d0c85bbff7a8d27bf29f8af", "https://www.lua.org/ftp/lua-5.3.0.tar.gz"],
+  "5.2.4":              ["913fdb32207046b273fdb17aad70be13", "https://www.lua.org/ftp/lua-5.2.4.tar.gz"],
+  "5.2.3":              ["dc7f94ec6ff15c985d2d6ad0f1b35654", "https://www.lua.org/ftp/lua-5.2.3.tar.gz"],
+  "5.2.2":              ["efbb645e897eae37cad4344ce8b0a614", "https://www.lua.org/ftp/lua-5.2.2.tar.gz"],
+  "5.2.1":              ["ae08f641b45d737d12d30291a5e5f6e3", "https://www.lua.org/ftp/lua-5.2.1.tar.gz"],
+  "5.2.0":              ["f1ea831f397214bae8a265995ab1a93e", "https://www.lua.org/ftp/lua-5.2.0.tar.gz"],
+  "5.1.5":              ["2e115fe26e435e33b0d5c022e4490567", "https://www.lua.org/ftp/lua-5.1.5.tar.gz"],
+  "5.1.4":              ["d0870f2de55d59c1c8419f36e8fac150", "https://www.lua.org/ftp/lua-5.1.4.tar.gz"],
+  "5.1.3":              ["a70a8dfaa150e047866dc01a46272599", "https://www.lua.org/ftp/lua-5.1.3.tar.gz"],
+  "5.1.2":              ["687ce4c2a1ddff18f1008490fdc4e5e0", "https://www.lua.org/ftp/lua-5.1.2.tar.gz"],
+  "5.1.1":              ["22f4f912f20802c11006fe9b84d5c461", "https://www.lua.org/ftp/lua-5.1.1.tar.gz"],
+  "5.1.0":              ["3e8dfe8be00a744cec2f9e766b2f2aee", "https://www.lua.org/ftp/lua-5.1.tar.gz"],
+  "5.0.3":              ["feee27132056de2949ce499b0ef4c480", "https://www.lua.org/ftp/lua-5.0.3.tar.gz"],
+  "5.0.2":              ["dea74646b7e5c621fef7174df83c34b1", "https://www.lua.org/ftp/lua-5.0.2.tar.gz"],
+  "5.0.1":              ["e0a450d84971a3f4563b98172d1e382c", "https://www.lua.org/ftp/lua-5.0.1.tar.gz"],
+  "5.0.0":              ["6f14803fad389fb1cb15d17edfeddd91", "https://www.lua.org/ftp/lua-5.0.tar.gz"],
 
-  await io.mkdirP(installPath)
-
-  await exec.exec("git clone https://github.com/openresty/luajit2.git", undefined, {
-    cwd: installPath
-  })
-
-  await exec.exec("make -j", undefined, {
-    cwd: path.join(installPath, "luajit2")
-  })
-
-  await exec.exec(`make -j install PREFIX="${luaInstallPath}"`, undefined, {
-    cwd: path.join(installPath, "luajit2")
-  })
-
-
-  core.addPath(path.join(luaInstallPath, "bin"));
-
-  await exec.exec("ln -s luajit lua", undefined, {
-    cwd: path.join(luaInstallPath, "bin")
-  })
+  "luajit-2.0.5":       ["48353202cbcacab84ee41a5a70ea0a2c", "https://luajit.org/download/LuaJIT-2.0.5.tar.gz"],
+  "luajit-2.1.0-beta3": ["eae40bc29d06ee5e3078f9444fcea39b", "https://luajit.org/download/LuaJIT-2.1.0-beta3.tar.gz"],
+  "luajit-2.1.0-beta2": ["fa14598d0d775a7ffefb138a606e0d7b", "https://luajit.org/download/LuaJIT-2.1.0-beta2.tar.gz"],
+  "luajit-2.1.0-beta1": ["5a5bf71666e77cf6e7a1ae851127b834", "https://luajit.org/download/LuaJIT-2.1.0-beta1.tar.gz"],
+  "luajit-2.0.4":       ["dd9c38307f2223a504cbfb96e477eca0", "https://luajit.org/download/LuaJIT-2.0.4.tar.gz"],
+  "luajit-2.0.3":       ["f14e9104be513913810cd59c8c658dc0", "https://luajit.org/download/LuaJIT-2.0.3.tar.gz"],
+  "luajit-2.0.2":       ["112dfb82548b03377fbefbba2e0e3a5b", "https://luajit.org/download/LuaJIT-2.0.2.tar.gz"],
+  "luajit-2.0.1":       ["85e406e8829602988eb1233a82e29f1f", "https://luajit.org/download/LuaJIT-2.0.1.tar.gz"],
+  "luajit-2.0.0":       ["97a2b87cc0490784f54b64cfb3b8f5ad", "https://luajit.org/download/LuaJIT-2.0.0.tar.gz"],
 }
 
-async function install_luajit(luajitVersion) {
-  const luaExtractPath = path.join(process.cwd(), INSTALL_PREFIX, `LuaJIT-${luajitVersion}`)
-  const luaInstallPath = path.join(process.cwd(), LUA_PREFIX)
+function getTarball(version) {
+  const v = VERSION_ALIASES[version] || version
+  if (!TARBALLS[v] || TARBALLS[v].length != 0) {
+    throw RangeError("Unsupported lua version: " + version)
+  }
+  return [TARBALLS[v][1], TARBALLS[v][0]]
+}
 
-  const luaSourceTar = await tc.downloadTool(`https://luajit.org/download/LuaJIT-${luajitVersion}.tar.gz`)
-  await io.mkdirP(luaExtractPath)
-  await tc.extractTar(luaSourceTar, INSTALL_PREFIX)
+function getLuaVersion() {
+  const luaVersion = core.getInput('luaVersion', { required: true })
+  return VERSION_ALIASES[luaVersion] || luaVersion
+}
 
-  await exec.exec("make -j", undefined, {
-    cwd: luaExtractPath
+async function download(url, hash) {
+  const luaSourceTar = await tc.downloadTool(url)
+  if (hash != md5File.sync(luaSourceTar)) {
+    throw Error("MD5 mismatch, please check your network.");
+  }
+  return luaSourceTar
+}
+
+function tarballContentDirectory(version) {
+  if (version.startsWith("luajit")) {
+    const luajitVersion = luaVersion.substr("luajit-".length)
+    return `LuaJIT-${luajitVersion}`
+  }
+  return `lua-${version}`
+}
+
+async function extractTarball(tarball, version) {
+  await tc.extractTar(tarball, SOURCE_DIRECTORY)
+  const dir = tarballContentDirectory(version)
+  return path.join(process.cwd(), SOURCE_DIRECTORY, dir)
+}
+
+async function downloadSource(luaVersion) {
+  const [url, hash] = getTarball(luaVersion)
+  const tarball = download(url, hash)
+  return extractTarball(tarball, luaVersion)
+}
+
+async function installSystemDependencies() {
+  if (process.platform == "linux") {
+    return await exec.exec("sudo apt-get install -q libreadline-dev libncurses-dev", undefined, {
+      env: {
+        DEBIAN_FRONTEND: "noninteractive",
+        TERM: "linux"
+      }
+    })
+  }
+
+  if (process.platform == "darwin") {
+    // No dependencies needs to be installed.
+    return
+  }
+
+  if (process.platform == "win32") { // even Windows 64 bit.
+    // No dependencies needs to be installed.
+    return
+  }
+}
+
+async function addCMakeBuildScripts(sourcePath, luaVersion) {
+  //
+}
+
+async function buildAndInstall(sourcePath) {
+  await exec.exec(`cmake -H"${sourcePath}" -Bbuild -D CMAKE_INSTALL_PERFIX="${INSTALL_PREFIX}"`, undefined, {
+    cwd: sourcePath
+  })
+  await exec.exec(`cmake --build build --config Release --target`, undefined, {
+    cwd: sourcePath
   })
 
-  await exec.exec(`make -j install PREFIX="${luaInstallPath}"`, undefined, {
-    cwd: luaExtractPath
-  })
-
-  core.addPath(path.join(luaInstallPath, "bin"));
-
-  await exec.exec(`ln -s luajit-${luajitVersion} lua`, undefined, {
-    cwd: path.join(luaInstallPath, "bin")
-  })
-
+  core.addPath(path.join(INSTALL_PREFIX, "bin"));
 }
 
 async function main() {
-  let luaVersion = core.getInput('luaVersion', { required: true })
-  let luaCompileFlags = core.getInput('luaCompileFlags')
-
-  if (VERSION_ALIASES[luaVersion]) {
-    luaVersion = VERSION_ALIASES[luaVersion]
-  }
-
-  if (luaVersion == "luajit-openresty") {
-    return await install_luajit_openresty()
-  }
-
-  if (luaVersion.startsWith("luajit-")) {
-    const luajitVersion = luaVersion.substr("luajit-".length)
-    return await install_luajit(luajitVersion)
-  }
-
-  const luaExtractPath = path.join(process.cwd(), INSTALL_PREFIX, `lua-${luaVersion}`)
-  const luaInstallPath = path.join(process.cwd(), LUA_PREFIX)
-
-  const luaSourceTar = await tc.downloadTool(`https://www.lua.org/ftp/lua-${luaVersion}.tar.gz`)
-  await io.mkdirP(luaExtractPath)
-  await tc.extractTar(luaSourceTar, INSTALL_PREFIX)
-
-  await exec.exec("sudo apt-get install -q libreadline-dev libncurses-dev", undefined, {
-    env: {
-      DEBIAN_FRONTEND: "noninteractive",
-      TERM: "linux"
-    }
-  })
-
-  const compileFlagsArray = [
-    "-j",
-    "linux",
-  ]
-
-  if (luaCompileFlags) {
-    compileFlagsArray.push(luaCompileFlags)
-  }
-
-  await exec.exec("make", compileFlagsArray, {
-    cwd: luaExtractPath
-  })
-
-  await exec.exec(`make -j INSTALL_TOP="${luaInstallPath}" install`, undefined, {
-    cwd: luaExtractPath
-  })
-
-  core.addPath(path.join(luaInstallPath, "bin"));
+  const luaVersion = getLuaVersion()
+  const sourcePath = downloadSource(luaVersion)  
+  installSystemDependencies()
+  addCMakeBuildScripts(sourcePath, luaVersion)
+  buildAndInstall(sourcePath)
 }
 
 main().catch(err => {
   core.setFailed(`Failed to install Lua: ${err}`);
 })
-

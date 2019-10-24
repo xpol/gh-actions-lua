@@ -1,6 +1,6 @@
 
 name: "Install Lua/LuaJIT"
-description: "Download, build, and install Lua or LuaJIT for use with scripts, tests and more"
+description: "Download, build, and install Lua or LuaJIT."
 
 branding:
   icon: 'moon'
@@ -8,7 +8,7 @@ branding:
 
 inputs:
   luaVersion:
-    description: "The version of Lua to install, must be available on https://www.lua.org/ftp/ or http://luajit.org/download.html"
+    description: "The version of Lua to install. Supported versions 5.0.0"
     required: false
     default: "5.3"
   luaCompileFlags:
